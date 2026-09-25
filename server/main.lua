@@ -17,9 +17,17 @@ local function countTapes(src)
     return count
 end
 
-local function itemCost(pointCount)
-    if not Config.ConsumeItem then return 0 end
-    return Config.ItemPerSegment and pointCount - 1 or 1
+local function getRoll(src, slot)
+    local item = type(slot) == 'number' and ox:GetSlot(src, slot)
+    if not item or item.name ~= Config.Item then
+        slot = ox:GetSlotIdWithItem(src, Config.Item)
+        item = slot and ox:GetSlot(src, slot)
+    end
+    return item, slot
+end
+
+local function getDurability(item)
+    return (item.metadata and item.metadata.durability) or 100
 end
 
 local function removeTape(id)
@@ -33,17 +41,24 @@ lib.callback.register('mach1ne_policetape:getTapes', function()
     return list
 end)
 
-lib.callback.register('mach1ne_policetape:canUse', function(source)
+lib.callback.register('mach1ne_policetape:canUse', function(source, slot)
     if not isPolice(source) then return false, 'Kun politiet kan bruge afspærringstape' end
-    local count = ox:GetItemCount(source, Config.Item)
-    if count < 1 then return false, 'Du har ingen afspærringstape' end
     if Config.MaxTapesPerPlayer > 0 and countTapes(source) >= Config.MaxTapesPerPlayer then
         return false, ('Du har allerede sat %d afspærringer op'):format(Config.MaxTapesPerPlayer)
     end
-    return true, count
+    if not Config.ConsumeItem then return true, -1 end
+
+    local item = getRoll(source, slot)
+    if not item then return false, 'Du har ingen afspærringstape' end
+
+    local remaining = getDurability(item) / 100 * Config.RollLength
+    if remaining < Config.Tape.minLength then
+        return false, 'Din afspærringstape er opbrugt'
+    end
+    return true, remaining
 end)
 
-lib.callback.register('mach1ne_policetape:place', function(source, points)
+lib.callback.register('mach1ne_policetape:place', function(source, points, slot)
     if not isPolice(source) then return false, 'Kun politiet kan bruge afspærringstape' end
     if type(points) ~= 'table' or #points < 2 or #points > Config.Tape.maxPoints then
         return false, 'Ugyldige punkter'
@@ -72,19 +87,34 @@ lib.callback.register('mach1ne_policetape:place', function(source, points)
         return false, ('Du har allerede sat %d afspærringer op'):format(Config.MaxTapesPerPlayer)
     end
 
-    local cost = itemCost(#points)
-    if ox:GetItemCount(source, Config.Item) < math.max(cost, 1) then
-        return false, 'Du har ikke nok afspærringstape'
-    end
-    if cost > 0 and not ox:RemoveItem(source, Config.Item, cost) then
-        return false, 'Kunne ikke bruge afspærringstape'
+    local left
+    if Config.ConsumeItem then
+        local item, rollSlot = getRoll(source, slot)
+        if not item then return false, 'Du har ingen afspærringstape' end
+
+        local durability = getDurability(item)
+        local remaining  = durability / 100 * Config.RollLength
+        if total > remaining + 0.01 then
+            return false, 'Der er ikke nok tape på rullen'
+        end
+
+        left = math.max(remaining - total, 0)
+        local newDurability = durability - total / Config.RollLength * 100
+        if newDurability <= 0 then
+            ox:RemoveItem(source, Config.Item, 1, nil, rollSlot)
+        else
+            local metadata = item.metadata or {}
+            metadata.durability = newDurability
+            metadata.description = ('Tape tilbage: %.1f m'):format(left)
+            ox:SetMetadata(source, rollSlot, metadata)
+        end
     end
 
     nextId = nextId + 1
-    local tape = { id = nextId, points = points, owner = source, cost = cost, created = os.time() }
+    local tape = { id = nextId, points = points, owner = source, created = os.time() }
     Tapes[nextId] = tape
     TriggerClientEvent('mach1ne_policetape:add', -1, tape)
-    return true
+    return true, left
 end)
 
 RegisterNetEvent('mach1ne_policetape:remove', function(id)
@@ -97,10 +127,6 @@ RegisterNetEvent('mach1ne_policetape:remove', function(id)
     if closest > Config.Remove.interactDist + 3.0 then return end
 
     removeTape(id)
-
-    if Config.ReturnItem and tape.cost > 0 and ox:CanCarryItem(src, Config.Item, tape.cost) then
-        ox:AddItem(src, Config.Item, tape.cost)
-    end
 end)
 
 if Config.Lifetime > 0 then

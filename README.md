@@ -10,9 +10,9 @@ Afspærringstape til FiveM (ESX). Politiet kan sætte tape op mellem flere punkt
 - **Blafrer i vinden**: Tapen bevæger sig let efter vindstyrken i spillet.
 - **Tape-rulle i hånden**: Synkroniseret prop, mens tapen sættes op eller tages ned.
 - **Blips på kortet**: Kun synlige for politiet.
-- **Item-baseret**: Kræver `policetape` fra ox_inventory. Det kan koste 1 item pr. strækning eller pr. tape.
+- **Item-baseret med durability**: Kræver `policetape` fra ox_inventory. En rulle har `Config.RollLength` meter tape, og hver meter slider på rullen. Når rullen er tom, går itemet i stykker.
 - **Job-låst**: Kun jobs i `Config.Jobs` (med minimum grade) kan bruge tapen.
-- **Tag ned**: Stå ved et af punkterne og tryk `E`. Items gives tilbage.
+- **Tag ned**: Stå ved et af punkterne og tryk `E`. Den nedtagne tape er brugt og gives ikke tilbage.
 - **Server-validering**: Job, items, afstand og længde tjekkes på serveren.
 - **Automatisk oprydning**: Tapen forsvinder efter en valgfri tid.
 - **Performance**: Tapen tegnes kun tæt på spilleren med `DrawTexturedPoly`. Der bruges ingen entities.
@@ -35,14 +35,17 @@ Afspærringstape til FiveM (ESX). Politiet kan sætte tape op mellem flere punkt
 ['policetape'] = {
     label = 'Afspærringstape',
     weight = 200,
-    stack = true,
+    stack = false,
     close = true,
+    consume = 0,
     description = 'Politiets afspærringstape',
     client = {
         export = 'mach1ne_policetape.useTape'
     },
 },
 ```
+
+Bemærk: `stack` skal være `false`, da hver rulle har sin egen durability i item-metadata. `consume = 0` sørger for, at ox_inventory ikke selv fjerner itemet ved brug.
 
 3. Læg et billede med navnet `policetape.png` i `ox_inventory/web/images/`. Det er valgfrit.
 4. Tilføj til `server.cfg` efter afhængighederne:
@@ -80,9 +83,8 @@ Alt kan ændres i `config.lua`.
 | --- | --- | --- |
 | `Config.Item` | `'policetape'` | Item-navn i ox_inventory |
 | `Config.Jobs` | `{ police = 0 }` | Jobs der må bruge tapen: `[job] = minimum grade` |
-| `Config.ConsumeItem` | `true` | Fjern item når tapen sættes op |
-| `Config.ItemPerSegment` | `true` | 1 item pr. strækning (`false` = 1 pr. tape) |
-| `Config.ReturnItem` | `true` | Giv items tilbage når tapen tages ned |
+| `Config.ConsumeItem` | `true` | Brug tape fra rullens durability (`false` = uendelig tape) |
+| `Config.RollLength` | `50.0` | Meter tape på en ny rulle (100% durability) |
 | `Config.MaxTapesPerPlayer` | `10` | Max. aktive tapes pr. spiller (`0` = ingen grænse) |
 | `Config.Lifetime` | `60` | Minutter før tapen fjernes automatisk (`0` = aldrig) |
 | `Config.Tape.width` | `0.10` | Tapens højde i meter |

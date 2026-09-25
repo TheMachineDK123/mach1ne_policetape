@@ -6,11 +6,10 @@ Config.Jobs = {
     police = 0,
 }
 
-Config.ConsumeItem    = true
-Config.ItemPerSegment = true
-Config.ReturnItem     = true
+Config.ConsumeItem       = true
+Config.RollLength        = 50.0
 Config.MaxTapesPerPlayer = 10
-Config.Lifetime       = 60
+Config.Lifetime          = 60
 
 Config.Texture = {
     dict = 'prop_police_tape',

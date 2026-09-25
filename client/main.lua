@@ -300,20 +300,22 @@ local function drawPoint(pos, valid)
         r, g, 50, 200, false, false, 2, false, nil, nil, false)
 end
 
-local function showHelp(count, maxPoints)
+local function showHelp(count, maxPoints, left)
     local lines = { ('[E] Sæt punkt (%d/%d)'):format(count + 1, maxPoints) }
+    if left then lines[#lines + 1] = ('Tape tilbage: %.1f m'):format(left) end
     if count >= 2 then lines[#lines + 1] = '[Enter] Færdig' end
     lines[#lines + 1] = count > 0 and '[Backspace] Fortryd punkt' or '[Backspace] Annuller'
     lines[#lines + 1] = '[Højreklik] Annuller'
     lib.showTextUI(table.concat(lines, '  \n'), { icon = 'tape' })
 end
 
-local function selectPoints(maxPoints)
+local function selectPoints(maxPoints, remaining)
     local ped = PlayerPedId()
     local points, segments = {}, {}
+    local used = 0.0
     local c = Config.Tape.color
 
-    showHelp(0, maxPoints)
+    showHelp(0, maxPoints, remaining)
 
     while true do
         Wait(0)
@@ -333,9 +335,10 @@ local function selectPoints(maxPoints)
                 lib.hideTextUI()
                 return
             end
+            if #segments > 0 then used = used - segments[#segments].length end
             points[#points] = nil
             segments[#segments] = nil
-            showHelp(#points, maxPoints)
+            showHelp(#points, maxPoints, remaining and remaining - used)
         end
 
         if #points >= 2 and IsControlJustPressed(0, 191) then
@@ -355,6 +358,7 @@ local function selectPoints(maxPoints)
             local length = #(aim - last)
             valid = valid and length >= Config.Tape.minLength and length <= Config.Tape.maxLength
                 and isPathClear(last, aim, ped)
+            if valid and remaining and used + length > remaining then valid = false end
             if length >= 0.05 then
                 drawSegment(buildSegment(last, aim), valid and c[1] or 255, valid and c[2] or 90, valid and c[3] or 90, 150, time, 0.0)
             end
@@ -363,19 +367,22 @@ local function selectPoints(maxPoints)
         if aim then drawPoint(aim, valid) end
 
         if valid and IsControlJustPressed(0, 38) then
-            if last then segments[#segments + 1] = buildSegment(last, aim) end
+            if last then
+                segments[#segments + 1] = buildSegment(last, aim)
+                used = used + segments[#segments].length
+            end
             points[#points + 1] = aim
 
             if #points >= maxPoints then
                 lib.hideTextUI()
                 return points
             end
-            showHelp(#points, maxPoints)
+            showHelp(#points, maxPoints, remaining and remaining - used)
         end
     end
 end
 
-local function startPlacing()
+local function startPlacing(slot)
     if placing then return end
     if not isPolice() then
         return st.notify({ description = 'Kun politiet kan bruge afspærringstape', type = 'error' })
@@ -384,20 +391,17 @@ local function startPlacing()
         return st.notify({ description = 'Du kan ikke sætte tape op fra et køretøj', type = 'error' })
     end
 
-    local canUse, result = lib.callback.await('mach1ne_policetape:canUse', false)
+    local canUse, result = lib.callback.await('mach1ne_policetape:canUse', false, slot)
     if not canUse then return st.notify({ description = result, type = 'error' }) end
     if not loadTexture() then
         return st.notify({ description = 'Kunne ikke indlæse tape-texturen', type = 'error' })
     end
 
-    local maxPoints = Config.Tape.maxPoints
-    if Config.ConsumeItem and Config.ItemPerSegment then
-        maxPoints = math.min(maxPoints, result + 1)
-    end
+    local remaining = result and result >= 0 and result or nil
 
     placing = true
     setHandProp(true)
-    local points = selectPoints(maxPoints)
+    local points = selectPoints(Config.Tape.maxPoints, remaining)
 
     if points then
         local done = st.progressBar({
@@ -410,9 +414,16 @@ local function startPlacing()
         })
 
         if done then
-            local ok, err = lib.callback.await('mach1ne_policetape:place', false, points)
-            st.notify(ok and { description = 'Afspærringstape sat op', type = 'success' }
-                or { description = err or 'Kunne ikke sætte tape op', type = 'error' })
+            local ok, res = lib.callback.await('mach1ne_policetape:place', false, points, slot)
+            if ok then
+                local msg = 'Afspærringstape sat op'
+                if res then
+                    msg = res > 0 and ('%s - %.1f m tilbage'):format(msg, res) or msg .. ' - rullen er opbrugt'
+                end
+                st.notify({ description = msg, type = 'success' })
+            else
+                st.notify({ description = res or 'Kunne ikke sætte tape op', type = 'error' })
+            end
         end
     end
 
@@ -420,8 +431,8 @@ local function startPlacing()
     placing = false
 end
 
-exports('useTape', function()
-    startPlacing()
+exports('useTape', function(_, item, slot)
+    startPlacing(slot and slot.slot or (item and item.slot))
 end)
 
 CreateThread(function()
